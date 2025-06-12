@@ -1,33 +1,41 @@
-const express = require('express');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const express = require("express");
+const multer = require("multer");
+const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
+const { ILovePdf } = require("@ilovepdf/ilovepdf-nodejs");
+
 const app = express();
 const port = process.env.PORT || 3000;
 
-const upload = multer({ dest: 'uploads/' });
-app.use(express.static('public'));
+app.use(cors());
+app.use(express.static("public"));
+app.use(express.json());
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+const upload = multer({ dest: "uploads/" });
 
-app.post('/compress', upload.array('pdfs', 3), (req, res) => {
-  const compressionLevel = parseInt(req.body.level) || 5;
-  const outputPath = path.join(__dirname, 'compressed');
+const publicKey = "project_public_30309b6f324ff5ac2a592fa610b80ff9__whO4c59e695d135fc9723c689545b20ff786";
+const ilovepdf = new ILovePdf(publicKey, "my_task_app");
 
-  if (!fs.existsSync(outputPath)) fs.mkdirSync(outputPath);
+app.post("/compress", upload.array("pdfs", 3), async (req, res) => {
+  try {
+    const task = ilovepdf.newTask("compress");
+    await task.start();
 
-  const results = req.files.map((file, index) => {
-    const inputPath = file.path;
-    const outputFile = path.join(outputPath, `compressed_${index + 1}.pdf`);
-    fs.copyFileSync(inputPath, outputFile);
-    return `Compressed PDF ${index + 1} saved as ${path.basename(outputFile)}`;
-  });
+    for (const file of req.files) {
+      await task.addFile(file.path);
+    }
 
-  res.send('<h2>Compression Complete</h2><p>' + results.join('<br>') + '</p><a href="/">Go Back</a>');
+    await task.process();
+    const outputPath = path.join(__dirname, "downloads", `compressed_${Date.now()}.zip`);
+    await task.download(outputPath);
+    res.download(outputPath, () => fs.rmSync(outputPath, { force: true }));
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Compression failed.");
+  }
 });
 
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+  console.log(`Server running at http://localhost:${port}`);
 });
